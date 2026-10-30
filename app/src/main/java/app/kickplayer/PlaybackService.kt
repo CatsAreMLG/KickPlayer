@@ -243,10 +243,12 @@ class PlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
-    // Swiping the app away from recents closes it only if nothing is playing.
+    // Swiping the app away from recent apps (or dismissing the picture-in-picture
+    // window) closes it completely: playback stops, the notification goes away,
+    // and the VOD position is saved for next time.
     override fun onTaskRemoved(rootIntent: Intent?) {
         saveVodPosition()
-        super.onTaskRemoved(rootIntent)
+        pauseAllPlayersAndStopSelf()
     }
 
     override fun onDestroy() {
