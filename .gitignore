@@ -1,0 +1,21 @@
+# Build output
+build/
+.gradle/
+.kotlin/
+*.apk
+*.aab
+
+# Android Studio / IntelliJ settings (personal to each computer)
+.idea/
+*.iml
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Contains the SDK path on your computer
+local.properties
+
+# Signing keys: never commit these
+*.jks
+*.keystore
