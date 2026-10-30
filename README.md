@@ -2,6 +2,14 @@
 
 An Android app for watching Kick live streams and VODs with proper media controls. The official Kick app drops its controls in picture-in-picture, shows nothing on a smartwatch, and ignores earbud buttons while the screen is off. Kick Player registers a standard Android media session, so playback works with the notification, lock screen, Bluetooth earbuds, and Wear OS watches like any other media app.
 
+## Download
+
+**[Get the latest APK from Releases](../../releases/latest)**
+
+Download the `.apk` file under Assets and open it on your Android phone (Android 8.0 or newer). Allow installs from your browser or file app when asked, and tap "Install anyway" if Play Protect warns about an unrecognized app. New versions install over the old one and keep your settings, recents, and VOD positions.
+
+## About
+
 This is an unofficial, personal project. It is not affiliated with Kick, and it relies on Kick's undocumented web API, which can change without notice.
 
 ## Features
