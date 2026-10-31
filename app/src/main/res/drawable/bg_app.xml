@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Near-black base with a faint Kick-green glow from the top-left corner. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape><solid android:color="#0B0E0F" /></shape></item>
+    <item>
+        <shape>
+            <gradient
+                android:type="radial"
+                android:centerX="0.1"
+                android:centerY="0.0"
+                android:gradientRadius="520dp"
+                android:startColor="#2453FC18"
+                android:endColor="#0053FC18" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <gradient
+                android:type="radial"
+                android:centerX="1.0"
+                android:centerY="0.75"
+                android:gradientRadius="420dp"
+                android:startColor="#1253FC18"
+                android:endColor="#0053FC18" />
+        </shape>
+    </item>
+</layer-list>

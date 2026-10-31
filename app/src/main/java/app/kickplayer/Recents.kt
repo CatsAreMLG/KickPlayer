@@ -14,6 +14,8 @@ data class RecentItem(
     val avatarUrl: String?,
     val durationMs: Long,
     val watchedAt: Long,
+    // The streamer's channel, used for pinning. Null for older entries.
+    val channelSlug: String? = null,
 ) {
     companion object {
         const val LIVE = "live"
@@ -56,6 +58,7 @@ object Recents {
                 put("avatarUrl", item.avatarUrl ?: JSONObject.NULL)
                 put("durationMs", item.durationMs)
                 put("watchedAt", item.watchedAt)
+                put("channelSlug", item.channelSlug ?: JSONObject.NULL)
             })
         }
         prefs(c).edit().putString("items", arr.toString()).apply()
@@ -76,6 +79,52 @@ object Recents {
             avatarUrl = text("avatarUrl"),
             durationMs = optLong("durationMs"),
             watchedAt = optLong("watchedAt"),
+            channelSlug = text("channelSlug") ?: id.takeIf { type == RecentItem.LIVE },
         )
+    }
+}
+
+// A channel pinned to the top of the home screen.
+data class PinnedChannel(val slug: String, val name: String, val avatarUrl: String?)
+
+// Pinned channels, in the order they were pinned.
+object Pins {
+    private fun prefs(c: Context) = c.getSharedPreferences("pins", Context.MODE_PRIVATE)
+
+    fun all(c: Context): List<PinnedChannel> {
+        val raw = prefs(c).getString("items", null) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                val slug = o.optString("slug").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                PinnedChannel(
+                    slug = slug,
+                    name = o.optString("name").ifBlank { slug },
+                    avatarUrl = if (o.isNull("avatarUrl")) null else o.optString("avatarUrl"),
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun isPinned(c: Context, slug: String) = all(c).any { it.slug == slug }
+
+    fun add(c: Context, pin: PinnedChannel) {
+        if (isPinned(c, pin.slug)) return
+        save(c, all(c) + pin)
+    }
+
+    fun remove(c: Context, slug: String) = save(c, all(c).filterNot { it.slug == slug })
+
+    private fun save(c: Context, pins: List<PinnedChannel>) {
+        val arr = JSONArray()
+        pins.forEach { pin ->
+            arr.put(JSONObject().apply {
+                put("slug", pin.slug)
+                put("name", pin.name)
+                put("avatarUrl", pin.avatarUrl ?: JSONObject.NULL)
+            })
+        }
+        prefs(c).edit().putString("items", arr.toString()).apply()
     }
 }

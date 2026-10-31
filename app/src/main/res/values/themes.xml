@@ -1,14 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <color name="kick_green">#53FC18</color>
+    <color name="icon_background">#0B0E0F</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#9BA4A9</color>
+    <color name="text_muted">#6F7A80</color>
+
     <style name="Theme.KickPlayer" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowBackground">@drawable/bg_app</item>
+        <item name="android:colorAccent">@color/kick_green</item>
+        <item name="android:colorControlActivated">@color/kick_green</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="SectionHeader">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">24dp</item>
+        <item name="android:layout_marginBottom">10dp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Pill">
+        <item name="android:layout_height">44dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingHorizontal">18dp</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="GlassIconButton">
+        <item name="android:background">@drawable/bg_glass_circle</item>
+        <item name="android:scaleType">centerInside</item>
+        <item name="android:padding">8dp</item>
+        <item name="android:tint">#FFFFFF</item>
     </style>
 
     <style name="GestureHint">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:background">#99000000</item>
-        <item name="android:paddingHorizontal">14dp</item>
+        <item name="android:background">@drawable/bg_pill_glass</item>
+        <item name="android:paddingHorizontal">16dp</item>
         <item name="android:paddingVertical">8dp</item>
         <item name="android:textColor">#FFFFFF</item>
         <item name="android:textSize">16sp</item>

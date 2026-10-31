@@ -2,15 +2,16 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?android:attr/selectableItemBackground"
+    android:layout_marginBottom="10dp"
+    android:background="@drawable/bg_card"
     android:orientation="horizontal"
-    android:paddingHorizontal="12dp"
-    android:paddingVertical="8dp">
+    android:padding="10dp">
 
     <FrameLayout
-        android:layout_width="160dp"
-        android:layout_height="90dp"
-        android:background="#1E1E1E">
+        android:id="@+id/thumbFrame"
+        android:layout_width="148dp"
+        android:layout_height="83dp"
+        android:background="@drawable/bg_thumb">
 
         <ImageView
             android:id="@+id/thumb"
@@ -24,11 +25,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="top|start"
-            android:layout_margin="4dp"
-            android:paddingHorizontal="5dp"
+            android:layout_margin="6dp"
+            android:paddingHorizontal="6dp"
             android:paddingVertical="1dp"
-            android:textColor="#FFFFFF"
-            android:textSize="11sp"
+            android:textSize="10sp"
             android:textStyle="bold"
             android:visibility="gone" />
 
@@ -37,12 +37,13 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom|end"
-            android:layout_margin="4dp"
-            android:background="#B3000000"
-            android:paddingHorizontal="4dp"
+            android:layout_margin="6dp"
+            android:background="@drawable/bg_badge_dark"
+            android:paddingHorizontal="5dp"
             android:paddingVertical="1dp"
             android:textColor="#FFFFFF"
             android:textSize="11sp"
+            android:textStyle="bold"
             android:visibility="gone" />
 
         <ProgressBar
@@ -52,14 +53,15 @@
             android:layout_height="3dp"
             android:layout_gravity="bottom"
             android:max="1000"
-            android:progressTint="#53FC18"
             android:progressBackgroundTint="#55FFFFFF"
+            android:progressTint="@color/kick_green"
             android:visibility="gone" />
     </FrameLayout>
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical"
         android:layout_marginStart="12dp"
         android:layout_weight="1"
         android:orientation="vertical">
@@ -70,16 +72,17 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:maxLines="2"
-            android:textColor="#FFFFFF"
-            android:textSize="15sp" />
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/subtitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="3dp"
             android:singleLine="true"
-            android:textColor="#AAAAAA"
+            android:textColor="@color/text_secondary"
             android:textSize="13sp" />
 
         <TextView
@@ -87,7 +90,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:singleLine="true"
-            android:textColor="#888888"
+            android:textColor="@color/text_muted"
             android:textSize="12sp" />
     </LinearLayout>
 </LinearLayout>

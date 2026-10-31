@@ -26,12 +26,15 @@ import android.view.MotionEvent
 import android.view.OrientationEventListener
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.BaseAdapter
-import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
@@ -42,17 +45,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
-import androidx.core.widget.doAfterTextChanged
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaMetadata
-import androidx.media3.common.text.Cue
-import androidx.media3.common.text.CueGroup
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.text.Cue
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -66,31 +70,52 @@ import kotlinx.coroutines.launch
 @OptIn(UnstableApi::class)
 class MainActivity : ComponentActivity() {
 
-    private lateinit var controls: View
+    // Where the video is: not shown, at the top of the player screen, or
+    // floating over the home screen. Fullscreen and system PiP sit on top of these.
+    private enum class PlayerMode { HIDDEN, EXPANDED, MINI }
+    private var playerMode = PlayerMode.HIDDEN
+
+    private lateinit var root: View
+    private lateinit var homeScreen: View
+    private lateinit var playerScreen: View
+    private lateinit var playerSlot: View
+    private lateinit var playerFrame: FrameLayout
+    private lateinit var playerView: PlayerView
     private lateinit var channelInput: EditText
     private lateinit var status: TextView
-    private lateinit var playerFrame: View
-    private lateinit var playerView: PlayerView
-    private lateinit var infoSection: View
+    private lateinit var pinnedRow: LinearLayout
+    private lateinit var pinnedHint: TextView
+    private lateinit var recentHeader: TextView
+    private lateinit var recentList: LinearLayout
+    private lateinit var homeBottomSpace: View
     private lateinit var infoTitle: TextView
     private lateinit var infoAvatar: ImageView
     private lateinit var infoStreamer: TextView
     private lateinit var infoDetail: TextView
+    private lateinit var pinButton: TextView
+    private lateinit var moreHeader: TextView
+    private lateinit var moreList: LinearLayout
     private lateinit var fullscreenTitle: TextView
-    private var controlsVisible = false
-    private var openMenus = 0
-    private lateinit var homeScroll: View
-    private lateinit var homeList: LinearLayout
-    private var liveLabel: TextView? = null
+    private lateinit var miniOverlay: View
+    private lateinit var miniPlayPause: ImageButton
+    private lateinit var miniClose: ImageButton
     private lateinit var seekBackHint: TextView
     private lateinit var seekForwardHint: TextView
     private lateinit var zoomHint: TextView
+    private var liveLabel: TextView? = null
+    private var controlsVisible = false
+    private var openMenus = 0
+
     // Fullscreen zoom: 1 = whole picture. pan is the video's offset from center.
     private var zoomScale = 1f
     private var panX = 0f
     private var panY = 0f
     private var multiTouch = false
     private var barPlayer: LiveBarPlayer? = null
+
+    // Where the mini player was last dragged to (offset from bottom-right).
+    private var miniTx = 0f
+    private var miniTy = 0f
 
     private var isFullscreen = false
     // In fullscreen, turning the phone upright leaves fullscreen, but only once
@@ -103,6 +128,8 @@ class MainActivity : ComponentActivity() {
 
     private val channelStatuses = mutableMapOf<String, ChannelStatus>()
     private var statusJob: Job? = null
+    private var moreJob: Job? = null
+    private var moreLoadedFor: String? = null
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private val controller: MediaController?
@@ -135,8 +162,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Back: leaves fullscreen first, then shrinks the player into the mini player.
     private val backCallback = object : OnBackPressedCallback(false) {
-        override fun handleOnBackPressed() = toggleFullscreenButton()
+        override fun handleOnBackPressed() {
+            if (isFullscreen) toggleFullscreenButton() else minimize()
+        }
     }
 
     // Handles the buttons inside the picture-in-picture window.
@@ -156,9 +186,10 @@ class MainActivity : ComponentActivity() {
             updatePipParams()
             // Screen stays on while video plays; normal sleep timeout while paused.
             playerView.keepScreenOn = isPlaying
+            miniPlayPause.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
         }
         override fun onPlayerError(error: PlaybackException) {
-            status.text = "Playback error: ${error.errorCodeName}"
+            showError("Playback error: ${error.errorCodeName}")
         }
         override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = updateInfo()
         override fun onEvents(player: Player, events: Player.Events) = applyLayoutMode()
@@ -172,22 +203,34 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        controls = findViewById(R.id.controls)
-        channelInput = findViewById(R.id.channelInput)
-        status = findViewById(R.id.status)
+        root = findViewById(R.id.root)
+        homeScreen = findViewById(R.id.homeScreen)
+        playerScreen = findViewById(R.id.playerScreen)
+        playerSlot = findViewById(R.id.playerSlot)
         playerFrame = findViewById(R.id.playerFrame)
         playerView = findViewById(R.id.playerView)
-        infoSection = findViewById(R.id.infoSection)
+        channelInput = findViewById(R.id.channelInput)
+        status = findViewById(R.id.status)
+        pinnedRow = findViewById(R.id.pinnedRow)
+        pinnedHint = findViewById(R.id.pinnedHint)
+        recentHeader = findViewById(R.id.recentHeader)
+        recentList = findViewById(R.id.recentList)
+        homeBottomSpace = findViewById(R.id.homeBottomSpace)
         infoTitle = findViewById(R.id.infoTitle)
         infoAvatar = findViewById(R.id.infoAvatar)
         infoStreamer = findViewById(R.id.infoStreamer)
         infoDetail = findViewById(R.id.infoDetail)
+        pinButton = findViewById(R.id.pinButton)
+        moreHeader = findViewById(R.id.moreHeader)
+        moreList = findViewById(R.id.moreList)
         fullscreenTitle = findViewById(R.id.fullscreenTitle)
-        homeScroll = findViewById(R.id.homeScroll)
-        homeList = findViewById(R.id.homeList)
+        miniOverlay = findViewById(R.id.miniOverlay)
+        miniPlayPause = findViewById(R.id.miniPlayPause)
+        miniClose = findViewById(R.id.miniClose)
         seekBackHint = findViewById(R.id.seekBackHint)
         seekForwardHint = findViewById(R.id.seekForwardHint)
         zoomHint = findViewById(R.id.zoomHint)
+        setupWindowInsets()
 
         // The rewind/forward buttons use the 10 second increments set in PlaybackService.
         playerView.setShowNextButton(false)
@@ -198,20 +241,23 @@ class MainActivity : ComponentActivity() {
         setupSettingsButton()
         setupGestures()
         setupLiveLabel()
+        setupMiniPlayer()
 
         channelInput.setText(Prefs.lastChannel(this))
         channelInput.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_GO) { watch(); true } else false
         }
-        findViewById<Button>(R.id.goButton).setOnClickListener { watch() }
-        findViewById<Button>(R.id.vodsButton).setOnClickListener { showVodList() }
+        findViewById<View>(R.id.goButton).setOnClickListener { watch() }
+        findViewById<View>(R.id.vodsButton).setOnClickListener { showVodList() }
+        findViewById<View>(R.id.navHome).setOnClickListener { minimize() }
+        pinButton.setOnClickListener { togglePinForCurrent() }
 
         // The status line (loading, errors) hides itself when there's nothing to say.
-        status.doAfterTextChanged { applyLayoutMode() }
+        status.doAfterTextChanged { setVisible(status, status.text.isNotEmpty()) }
         playerView.setControllerVisibilityListener(
             PlayerView.ControllerVisibilityListener { visibility ->
                 controlsVisible = visibility == View.VISIBLE
-                updateFullscreenTitle()
+                updateOverlayButtons()
             }
         )
 
@@ -243,6 +289,7 @@ class MainActivity : ComponentActivity() {
             updateInfo()
             applyLayoutMode()
             playerView.keepScreenOn = c.isPlaying
+            miniPlayPause.setImageResource(if (c.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
         }, ContextCompat.getMainExecutor(this))
         uiHandler.post(liveLabelUpdater)
         orientationListener.enable()
@@ -269,33 +316,78 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    // ---------- Layout: normal, fullscreen, picture-in-picture ----------
+    // ---------- Layout: home, player, mini player, fullscreen, PiP ----------
 
     private fun hasMedia() = (controller?.mediaItemCount ?: 0) > 0
 
     private fun applyLayoutMode() {
-        val pip = isInPictureInPictureMode
-        val immersive = isFullscreen || pip
+        val c = controller
         val media = hasMedia()
+        if (c != null) {
+            // Something started playing (or kept playing in the background) with
+            // no video showing: open the player. Playback cleared: hide it.
+            if (media && playerMode == PlayerMode.HIDDEN) playerMode = PlayerMode.EXPANDED
+            if (!media && playerMode != PlayerMode.HIDDEN) playerMode = PlayerMode.HIDDEN
+        }
+        val pip = isInPictureInPictureMode
+        val full = isFullscreen || pip
+        val mini = playerMode == PlayerMode.MINI && !full
 
-        setVisible(controls, !immersive)
-        setVisible(homeScroll, !immersive)
-        setVisible(infoSection, !immersive && media)
-        setVisible(status, !immersive && status.text.isNotEmpty())
-        setVisible(playerFrame, immersive || media)
-        playerView.useController = !pip
-        updateFullscreenTitle()
-        updateCaptionMargins()
+        setVisible(homeScreen, !full && playerMode != PlayerMode.EXPANDED)
+        setVisible(playerScreen, !full && playerMode == PlayerMode.EXPANDED)
+        setVisible(playerFrame, full || playerMode != PlayerMode.HIDDEN)
+        setVisible(miniOverlay, mini)
+        playerView.useController = !pip && !mini
+        playerView.subtitleView?.visibility = if (mini) View.GONE else View.VISIBLE
+        backCallback.isEnabled = isFullscreen || playerMode == PlayerMode.EXPANDED
 
-        // Normal mode: 16:9 player above the home list. Fullscreen/PiP: player fills the screen.
-        val lp = playerFrame.layoutParams as LinearLayout.LayoutParams
-        val height = if (immersive) 0 else resources.displayMetrics.widthPixels * 9 / 16
-        val weight = if (immersive) 1f else 0f
-        if (lp.height != height || lp.weight != weight) {
-            lp.height = height
-            lp.weight = weight
+        // Size and place the video for the current mode.
+        val contentW = (root.width - root.paddingLeft - root.paddingRight)
+            .takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val expandedH = contentW * 9 / 16
+        val lp = playerFrame.layoutParams as FrameLayout.LayoutParams
+        val (w, h, gravity, margin) = when {
+            full -> listOf(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
+                android.view.Gravity.TOP or android.view.Gravity.START, 0,
+            )
+            mini -> {
+                val miniW = (contentW * 0.52f).toInt()
+                listOf(miniW, miniW * 9 / 16, android.view.Gravity.BOTTOM or android.view.Gravity.END, dp(12))
+            }
+            else -> listOf(FrameLayout.LayoutParams.MATCH_PARENT, expandedH, android.view.Gravity.TOP, 0)
+        }
+        // Expanded: just below the navbar. Mini: inset from the corner. Fullscreen: no margins.
+        val top = if (!full && !mini) dp(NAVBAR_HEIGHT_DP) else margin
+        if (lp.width != w || lp.height != h || lp.gravity != gravity ||
+            lp.leftMargin != margin || lp.topMargin != top
+        ) {
+            lp.width = w
+            lp.height = h
+            lp.gravity = gravity
+            lp.setMargins(margin, top, margin, margin)
             playerFrame.layoutParams = lp
         }
+        playerFrame.translationX = if (mini) miniTx else 0f
+        playerFrame.translationY = if (mini) miniTy else 0f
+        playerFrame.elevation = if (mini) dp(14).toFloat() else 0f
+        playerFrame.setBackgroundResource(if (mini) R.drawable.bg_mini else android.R.color.black)
+        playerFrame.clipToOutline = mini
+
+        val slotLp = playerSlot.layoutParams
+        if (slotLp.height != expandedH) {
+            slotLp.height = expandedH
+            playerSlot.layoutParams = slotLp
+        }
+        val bottomSpace = if (playerMode == PlayerMode.MINI) dp(150) else dp(24)
+        val spaceLp = homeBottomSpace.layoutParams
+        if (spaceLp.height != bottomSpace) {
+            spaceLp.height = bottomSpace
+            homeBottomSpace.layoutParams = spaceLp
+        }
+
+        updateOverlayButtons()
+        updateCaptionMargins()
     }
 
     private fun setVisible(view: View, visible: Boolean) {
@@ -303,11 +395,79 @@ class MainActivity : ComponentActivity() {
         if (view.visibility != v) view.visibility = v
     }
 
+    // Shrinks the player into the floating mini player and shows the home screen.
+    private fun minimize() {
+        if (playerMode != PlayerMode.EXPANDED || isFullscreen) return
+        playerMode = PlayerMode.MINI
+        playerView.hideController()
+        renderHome()
+        applyLayoutMode()
+    }
+
+    private fun expand() {
+        if (playerMode != PlayerMode.MINI) return
+        playerMode = PlayerMode.EXPANDED
+        applyLayoutMode()
+    }
+
+    // Stops playback entirely (the mini player's X).
+    private fun closePlayer() {
+        val c = controller ?: return
+        c.pause()
+        c.stop()
+        c.clearMediaItems()
+        playerMode = PlayerMode.HIDDEN
+        renderHome()
+        applyLayoutMode()
+    }
+
+    // Title across the top in fullscreen, while the controls are up.
+    private fun updateOverlayButtons() {
+        setVisible(
+            fullscreenTitle,
+            isFullscreen && controlsVisible && fullscreenTitle.text.isNotEmpty()
+        )
+    }
+
+    // The app draws behind the status bar, navigation bar, and camera cutout,
+    // then pads itself to stay clear of them. In fullscreen the padding drops
+    // to zero so the video can use every pixel, like YouTube.
+    private fun setupWindowInsets() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val pad = if (isFullscreen) {
+                androidx.core.graphics.Insets.NONE
+            } else {
+                insets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() or
+                        WindowInsetsCompat.Type.displayCutout() or
+                        WindowInsetsCompat.Type.ime() // keeps the search box above the keyboard
+                )
+            }
+            view.setPadding(pad.left, pad.top, pad.right, pad.bottom)
+            view.post { applyLayoutMode() }
+            insets
+        }
+    }
+
+    // Lets fullscreen video extend into the camera cutout's side of the screen.
+    private fun setCutoutMode(fullscreen: Boolean) {
+        if (Build.VERSION.SDK_INT < 28) return
+        window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode = if (fullscreen) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+            }
+        }
+    }
+
     // Fullscreen works the same however you enter it: the screen turns
     // landscape (either way up), and turning the phone upright leaves it.
     private fun onFullscreenButton(full: Boolean) {
         isFullscreen = full
-        backCallback.isEnabled = full
+        setCutoutMode(full)
+        ViewCompat.requestApplyInsets(root)
         val bars = WindowCompat.getInsetsController(window, window.decorView)
         if (full) {
             waitingForUpright = false
@@ -335,14 +495,81 @@ class MainActivity : ComponentActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         val landscape = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE
-        // Turning the phone sideways while something plays goes fullscreen.
-        if (landscape && !isFullscreen && hasMedia() && !isInPictureInPictureMode && !waitingForUpright) {
+        // Turning the phone sideways while the player is open goes fullscreen.
+        if (landscape && !isFullscreen && playerMode == PlayerMode.EXPANDED &&
+            !isInPictureInPictureMode && !waitingForUpright
+        ) {
             toggleFullscreenButton()
         }
         applyLayoutMode()
     }
 
-    // ---------- Now-playing info, fullscreen title, captions ----------
+    // ---------- Mini player ----------
+
+    // Drag the mini player anywhere; it snaps to the nearer side when let go.
+    // Tap it to open the full player.
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupMiniPlayer() {
+        val slop = ViewConfiguration.get(this).scaledTouchSlop
+        var downX = 0f
+        var downY = 0f
+        var startX = 0f
+        var startY = 0f
+        var dragging = false
+        miniOverlay.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    playerFrame.animate().cancel()
+                    downX = e.rawX
+                    downY = e.rawY
+                    startX = playerFrame.translationX
+                    startY = playerFrame.translationY
+                    dragging = false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = e.rawX - downX
+                    val dy = e.rawY - downY
+                    if (!dragging && kotlin.math.hypot(dx, dy) > slop) dragging = true
+                    if (dragging) {
+                        val (minX, minY) = miniBounds()
+                        playerFrame.translationX = (startX + dx).coerceIn(minX, 0f)
+                        playerFrame.translationY = (startY + dy).coerceIn(minY, 0f)
+                    }
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!dragging) {
+                        expand()
+                    } else {
+                        val (minX, _) = miniBounds()
+                        miniTx = if (playerFrame.translationX < minX / 2f) minX else 0f
+                        miniTy = playerFrame.translationY
+                        playerFrame.animate().translationX(miniTx).setDuration(180).start()
+                    }
+                }
+            }
+            true
+        }
+        miniPlayPause.setOnClickListener {
+            val c = controller ?: return@setOnClickListener
+            if (c.isPlaying) c.pause() else c.play()
+        }
+        miniClose.setOnClickListener { closePlayer() }
+    }
+
+    // How far left and up the mini player can move (as negative offsets).
+    private fun miniBounds(): Pair<Float, Float> {
+        val m = dp(12)
+        val parentW = root.width - root.paddingLeft - root.paddingRight
+        val parentH = root.height - root.paddingTop - root.paddingBottom
+        val maxLeft = (parentW - playerFrame.width - 2 * m).coerceAtLeast(0)
+        val maxUp = (parentH - playerFrame.height - 2 * m).coerceAtLeast(0)
+        return Pair(-maxLeft.toFloat(), -maxUp.toFloat())
+    }
+
+    // ---------- Now-playing info, pinning, more from this streamer ----------
+
+    private fun currentChannelSlug(): String? =
+        controller?.mediaMetadata?.extras?.getString(EXTRA_CHANNEL_SLUG)
 
     // Per-item note shown under the streamer ("Resumed at 1:23:45"). Kept in a
     // companion so it survives the screen being recreated while audio plays.
@@ -353,15 +580,72 @@ class MainActivity : ComponentActivity() {
         infoTitle.text = title
         fullscreenTitle.text = title
         infoStreamer.text = meta.artist?.toString().orEmpty()
-        loadAvatar(
-            meta.artworkUri?.toString(),
-            meta.extras?.getString(EXTRA_CHANNEL_SLUG),
-        )
+        val slug = currentChannelSlug()
+        loadAvatar(meta.artworkUri?.toString(), slug)
         val id = c.currentMediaItem?.mediaId
         infoDetail.text = when {
             c.isCurrentMediaItemLive -> "Live stream"
             id != null -> playNotes[id] ?: "VOD"
             else -> ""
+        }
+        updatePinButton()
+        loadMoreFrom(slug, meta.artist?.toString(), KickApi.vodUuidOf(id))
+    }
+
+    private fun updatePinButton() {
+        val slug = currentChannelSlug()
+        setVisible(pinButton, slug != null)
+        if (slug == null) return
+        val pinned = Pins.isPinned(this, slug)
+        pinButton.text = if (pinned) "Pinned" else "Pin"
+        pinButton.setBackgroundResource(if (pinned) R.drawable.bg_pill_pinned else R.drawable.bg_pill_glass)
+        pinButton.setTextColor(if (pinned) ContextCompat.getColor(this, R.color.kick_green) else Color.WHITE)
+    }
+
+    private fun togglePinForCurrent() {
+        val slug = currentChannelSlug() ?: return
+        val meta = controller?.mediaMetadata
+        if (Pins.isPinned(this, slug)) {
+            Pins.remove(this, slug)
+        } else {
+            Pins.add(
+                this,
+                PinnedChannel(
+                    slug = slug,
+                    name = meta?.artist?.toString() ?: slug,
+                    avatarUrl = meta?.artworkUri?.toString() ?: avatarCache[slug],
+                )
+            )
+        }
+        updatePinButton()
+        renderHome()
+    }
+
+    // Recent VODs from the streamer you're watching, under the player.
+    private fun loadMoreFrom(slug: String?, streamer: String?, currentVod: String?) {
+        if (slug == null) {
+            moreLoadedFor = null
+            moreList.removeAllViews()
+            setVisible(moreHeader, false)
+            return
+        }
+        val key = "$slug|$currentVod"
+        if (key == moreLoadedFor) return
+        moreLoadedFor = key
+        moreJob?.cancel()
+        moreJob = lifecycleScope.launch {
+            val vods = runCatching { KickApi.listVods(this@MainActivity, slug) }.getOrNull().orEmpty()
+                .filter { it.uuid != currentVod }
+                .take(8)
+            moreList.removeAllViews()
+            moreHeader.text = "More from ${streamer ?: slug}"
+            setVisible(moreHeader, vods.isNotEmpty())
+            vods.forEach { vod ->
+                val row = layoutInflater.inflate(R.layout.item_media, moreList, false)
+                bindVodRow(row, vod)
+                row.setOnClickListener { playVod(vod) }
+                moreList.addView(row)
+            }
         }
     }
 
@@ -392,12 +676,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun updateFullscreenTitle() {
-        setVisible(
-            fullscreenTitle,
-            isFullscreen && controlsVisible && fullscreenTitle.text.isNotEmpty()
-        )
-    }
+    // ---------- Captions ----------
 
     // Keeps captions off the screen edges and bottom, like YouTube.
     private fun updateCaptionMargins() {
@@ -450,24 +729,52 @@ class MainActivity : ComponentActivity() {
     // ---------- Home screen ----------
 
     private fun renderHome() {
-        homeList.removeAllViews()
+        // Pinned channels
+        pinnedRow.removeAllViews()
+        val pins = Pins.all(this)
+        pins.forEach { pinnedRow.addView(pinnedChip(it)) }
+        setVisible(pinnedHint, pins.isEmpty())
+
+        // Recently watched
+        recentList.removeAllViews()
         val recents = Recents.all(this)
-        homeList.addView(TextView(this).apply {
-            text = if (recents.isEmpty()) {
-                "Nothing watched yet. Type a channel or paste a VOD link above."
-            } else {
-                "Recently watched"
+        recentHeader.text = if (recents.isEmpty()) "Nothing watched yet" else "Recently watched"
+        recents.forEach { recentList.addView(recentRow(it)) }
+    }
+
+    private fun pinnedChip(pin: PinnedChannel): View {
+        val chip = layoutInflater.inflate(R.layout.item_pinned, pinnedRow, false)
+        val st = channelStatuses[pin.slug]
+        val live = st?.isLive == true
+        chip.findViewById<View>(R.id.pinRing)
+            .setBackgroundResource(if (live) R.drawable.bg_ring_live else R.drawable.bg_ring)
+        chip.findViewById<ImageView>(R.id.pinAvatar).load(st?.avatarUrl ?: pin.avatarUrl) {
+            placeholder(R.drawable.avatar_placeholder)
+            error(R.drawable.avatar_placeholder)
+            fallback(R.drawable.avatar_placeholder)
+            transformations(CircleCropTransformation())
+        }
+        setVisible(chip.findViewById(R.id.pinLive), live)
+        chip.findViewById<TextView>(R.id.pinName).text = st?.streamer ?: pin.name
+        chip.setOnClickListener { openChannel(pin.slug) }
+        chip.setOnLongClickListener { anchor ->
+            PopupMenu(this, anchor).apply {
+                menu.add("Show VODs").setOnMenuItemClickListener { showVodList(pin.slug); true }
+                menu.add("Unpin").setOnMenuItemClickListener {
+                    Pins.remove(this@MainActivity, pin.slug)
+                    renderHome()
+                    updatePinButton()
+                    true
+                }
+                show()
             }
-            setTextColor(if (recents.isEmpty()) Color.parseColor("#888888") else Color.WHITE)
-            textSize = if (recents.isEmpty()) 14f else 18f
-            setTypeface(typeface, Typeface.BOLD)
-            setPadding(dp(12), dp(12), dp(12), dp(4))
-        })
-        recents.forEach { homeList.addView(recentRow(it)) }
+            true
+        }
+        return chip
     }
 
     private fun recentRow(item: RecentItem): View {
-        val row = layoutInflater.inflate(R.layout.item_media, homeList, false)
+        val row = layoutInflater.inflate(R.layout.item_media, recentList, false)
         val watched = DateUtils.getRelativeTimeSpanString(item.watchedAt)
 
         if (item.type == RecentItem.LIVE) {
@@ -481,13 +788,9 @@ class MainActivity : ComponentActivity() {
                 subtitle = st?.streamer ?: item.streamer,
                 detail = "Channel · watched $watched",
                 badge = when (st?.isLive) { true -> "LIVE"; false -> "OFFLINE"; null -> null },
-                badgeColor = if (live) Color.parseColor("#E53935") else Color.parseColor("#616161"),
+                badgeLive = live,
             )
-            row.setOnClickListener {
-                channelInput.setText(item.id)
-                Prefs.setLastChannel(this, item.id)
-                play("Loading ${item.id}…") { KickApi.resolve(this, item.id) }
-            }
+            row.setOnClickListener { openChannel(item.id) }
         } else {
             val position = VodPositions.get(this, item.id)
             val progress = if (item.durationMs > 0 && position > 0) {
@@ -513,8 +816,28 @@ class MainActivity : ComponentActivity() {
 
         row.setOnLongClickListener { anchor ->
             PopupMenu(this, anchor).apply {
-                menu.add("Remove from recents")
-                setOnMenuItemClickListener {
+                val slug = item.channelSlug
+                if (slug != null) {
+                    if (Pins.isPinned(this@MainActivity, slug)) {
+                        menu.add("Unpin ${item.streamer}").setOnMenuItemClickListener {
+                            Pins.remove(this@MainActivity, slug)
+                            renderHome()
+                            updatePinButton()
+                            true
+                        }
+                    } else {
+                        menu.add("Pin ${item.streamer}").setOnMenuItemClickListener {
+                            Pins.add(
+                                this@MainActivity,
+                                PinnedChannel(slug, item.streamer, channelStatuses[slug]?.avatarUrl ?: item.avatarUrl),
+                            )
+                            renderHome()
+                            updatePinButton()
+                            true
+                        }
+                    }
+                }
+                menu.add("Remove from recents").setOnMenuItemClickListener {
                     Recents.remove(this@MainActivity, item)
                     renderHome()
                     true
@@ -526,6 +849,20 @@ class MainActivity : ComponentActivity() {
         return row
     }
 
+    private fun bindVodRow(row: View, vod: KickVod) {
+        val watched = VodPositions.get(this, vod.uuid)
+        bindRow(
+            row,
+            thumbUrl = vod.thumbnailUrl,
+            fitThumb = false,
+            title = vod.title,
+            subtitle = vod.startTime.take(10),
+            detail = if (watched > 0) "Watched to ${formatTimestamp(watched)}" else "",
+            durationText = vod.durationMs.takeIf { it > 0 }?.let { formatTimestamp(it) },
+            progress = if (watched > 0 && vod.durationMs > 0) watched.toFloat() / vod.durationMs else null,
+        )
+    }
+
     private fun bindRow(
         row: View,
         thumbUrl: String?,
@@ -534,10 +871,12 @@ class MainActivity : ComponentActivity() {
         subtitle: String,
         detail: String,
         badge: String? = null,
-        badgeColor: Int = Color.TRANSPARENT,
+        badgeLive: Boolean = false,
         durationText: String? = null,
         progress: Float? = null,
     ) {
+        // Rounds the thumbnail's corners to match its background shape.
+        row.findViewById<View>(R.id.thumbFrame).clipToOutline = true
         row.findViewById<ImageView>(R.id.thumb).apply {
             // Avatars are square, so they're shown whole instead of cropped to 16:9.
             scaleType = if (fitThumb) ImageView.ScaleType.FIT_CENTER else ImageView.ScaleType.CENTER_CROP
@@ -545,11 +884,15 @@ class MainActivity : ComponentActivity() {
         }
         row.findViewById<TextView>(R.id.title).text = title.ifBlank { "Untitled" }
         row.findViewById<TextView>(R.id.subtitle).text = subtitle
-        row.findViewById<TextView>(R.id.detail).text = detail
+        row.findViewById<TextView>(R.id.detail).apply {
+            text = detail
+            visibility = if (detail.isEmpty()) View.GONE else View.VISIBLE
+        }
         row.findViewById<TextView>(R.id.badge).apply {
             visibility = if (badge != null) View.VISIBLE else View.GONE
             text = badge
-            setBackgroundColor(badgeColor)
+            setBackgroundResource(if (badgeLive) R.drawable.bg_badge_live else R.drawable.bg_badge_dark)
+            setTextColor(if (badgeLive) Color.BLACK else Color.WHITE)
         }
         row.findViewById<TextView>(R.id.duration).apply {
             visibility = if (durationText != null) View.VISIBLE else View.GONE
@@ -561,10 +904,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Checks which recent channels are live right now, one at a time.
+    // Checks which pinned and recent channels are live right now, one at a time.
     private fun refreshChannelStatuses() {
         statusJob?.cancel()
-        val slugs = Recents.all(this).filter { it.type == RecentItem.LIVE }.map { it.id }.distinct()
+        val slugs = (Pins.all(this).map { it.slug } +
+            Recents.all(this).filter { it.type == RecentItem.LIVE }.map { it.id }).distinct()
         if (slugs.isEmpty()) return
         statusJob = lifecycleScope.launch {
             for (slug in slugs) {
@@ -591,6 +935,15 @@ class MainActivity : ComponentActivity() {
             .hideSoftInputFromWindow(channelInput.windowToken, 0)
     }
 
+    // Errors show under the search box on the home screen, or as a toast
+    // when the player screen is covering it.
+    private fun showError(message: String?) {
+        status.text = message.orEmpty()
+        if (playerMode == PlayerMode.EXPANDED && !message.isNullOrEmpty()) {
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun watch() {
         val input = channelInput.text.toString()
         val vodUuid = extractVodUuid(input)
@@ -602,6 +955,23 @@ class MainActivity : ComponentActivity() {
         if (slug.isBlank()) return
         Prefs.setLastChannel(this, slug)
         play("Loading $slug…") { KickApi.resolve(this, slug) }
+    }
+
+    // Live channels play; channels known to be offline open their VODs instead.
+    private fun openChannel(slug: String) {
+        channelInput.setText(slug)
+        Prefs.setLastChannel(this, slug)
+        if (channelStatuses[slug]?.isLive == false) {
+            showVodList(slug)
+        } else {
+            play("Loading $slug…") { KickApi.resolve(this, slug) }
+        }
+    }
+
+    private fun playVod(vod: KickVod) {
+        play("Loading VOD…", vod.thumbnailUrl, vod.durationMs) {
+            KickApi.resolveVod(this@MainActivity, vod.uuid)
+        }
     }
 
     // fallbackThumb/fallbackDuration come from the VOD list, in case the single-VOD
@@ -617,7 +987,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             try {
                 val stream = load()
-                val c = controller ?: run { status.text = "Player not ready, try again."; return@launch }
+                val c = controller ?: run { showError("Player not ready, try again."); return@launch }
                 val vodUuid = KickApi.vodUuidOf(stream.mediaId)
                 val resumeAt = vodUuid?.let { VodPositions.get(this@MainActivity, it) } ?: 0L
                 c.setPlaybackSpeed(1f)
@@ -630,6 +1000,7 @@ class MainActivity : ComponentActivity() {
                         if (resumeAt > 0) "Resumed at ${formatTimestamp(resumeAt)}" else "Started from the beginning"
                 }
                 status.text = ""
+                playerMode = PlayerMode.EXPANDED
                 updateInfo()
 
                 Recents.add(
@@ -643,6 +1014,7 @@ class MainActivity : ComponentActivity() {
                         avatarUrl = stream.avatarUrl,
                         durationMs = stream.durationMs.takeIf { it > 0 } ?: fallbackDuration,
                         watchedAt = System.currentTimeMillis(),
+                        channelSlug = stream.channelSlug,
                     )
                 )
                 if (stream.isLive) {
@@ -654,24 +1026,25 @@ class MainActivity : ComponentActivity() {
                 renderHome()
                 applyLayoutMode()
             } catch (e: KickException) {
-                status.text = e.message
+                showError(e.message)
             } catch (e: Exception) {
-                status.text = "Error: ${e.message}"
+                showError("Error: ${e.message}")
             }
         }
     }
 
-    private fun showVodList() {
+    private fun showVodList(slugOverride: String? = null) {
         // If a VOD link is in the box, fall back to the last channel watched.
-        val slug = if (extractVodUuid(channelInput.text.toString()) != null) Prefs.lastChannel(this)
-        else normalizedSlug()
+        val slug = slugOverride
+            ?: if (extractVodUuid(channelInput.text.toString()) != null) Prefs.lastChannel(this)
+            else normalizedSlug()
         if (slug.isBlank()) return
         hideKeyboard()
         status.text = "Loading $slug VODs…"
         lifecycleScope.launch {
             try {
                 val vods = KickApi.listVods(this@MainActivity, slug)
-                if (vods.isEmpty()) { status.text = "$slug has no VODs."; return@launch }
+                if (vods.isEmpty()) { showError("$slug has no VODs."); return@launch }
                 status.text = ""
                 val adapter = object : BaseAdapter() {
                     override fun getCount() = vods.size
@@ -680,36 +1053,28 @@ class MainActivity : ComponentActivity() {
                     override fun getView(i: Int, convertView: View?, parent: ViewGroup): View {
                         val row = convertView
                             ?: layoutInflater.inflate(R.layout.item_media, parent, false)
-                        val v = vods[i]
-                        val watched = VodPositions.get(this@MainActivity, v.uuid)
-                        bindRow(
-                            row,
-                            thumbUrl = v.thumbnailUrl,
-                            fitThumb = false,
-                            title = v.title,
-                            subtitle = v.startTime.take(10),
-                            detail = if (watched > 0) "Watched to ${formatTimestamp(watched)}" else "",
-                            durationText = v.durationMs.takeIf { it > 0 }?.let { formatTimestamp(it) },
-                            progress = if (watched > 0 && v.durationMs > 0) {
-                                watched.toFloat() / v.durationMs
-                            } else null,
-                        )
+                        bindVodRow(row, vods[i])
                         return row
                     }
                 }
-                AlertDialog.Builder(this@MainActivity)
+                val dialog = AlertDialog.Builder(this@MainActivity)
                     .setTitle("$slug VODs")
-                    .setAdapter(adapter) { _, i ->
-                        val vod = vods[i]
-                        play("Loading VOD…", vod.thumbnailUrl, vod.durationMs) {
-                            KickApi.resolveVod(this@MainActivity, vod.uuid)
-                        }
-                    }
-                    .show()
+                    .setAdapter(adapter) { _, i -> playVod(vods[i]) }
+                    .create()
+                dialog.window?.setBackgroundDrawableResource(R.drawable.bg_dialog)
+                dialog.show()
+                // The list exists only once the dialog is showing.
+                dialog.listView?.apply {
+                    // Lists ignore row margins, so the gap comes from an invisible divider.
+                    divider = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+                    dividerHeight = dp(10)
+                    setPadding(dp(12), 0, dp(12), dp(12))
+                    clipToPadding = false
+                }
             } catch (e: KickException) {
-                status.text = e.message
+                showError(e.message)
             } catch (e: Exception) {
-                status.text = "Error: ${e.message}"
+                showError("Error: ${e.message}")
             }
         }
     }
@@ -855,6 +1220,7 @@ class MainActivity : ComponentActivity() {
     // ---------- Touch gestures on the video ----------
 
     // Double-tap the left or right half to skip back or forward 10 seconds.
+    // Swipe down to shrink into the mini player (or to leave fullscreen).
     // In fullscreen, pinch to zoom from the whole picture up to 8x, centered
     // on your fingers, and drag with one finger to look around while zoomed.
     // It snaps to "zoomed to fill" when you pass near that level.
@@ -919,6 +1285,18 @@ class MainActivity : ComponentActivity() {
                 panX -= distanceX
                 panY -= distanceY
                 applyZoom()
+                return true
+            }
+
+            // A quick downward swipe shrinks the player, like YouTube.
+            override fun onFling(
+                e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float,
+            ): Boolean {
+                if (multiTouch || zoomScale > 1.01f) return false
+                if (velocityY < 1200 || kotlin.math.abs(velocityY) < kotlin.math.abs(velocityX) * 1.5f) {
+                    return false
+                }
+                if (isFullscreen) toggleFullscreenButton() else minimize()
                 return true
             }
         })
@@ -1076,6 +1454,7 @@ class MainActivity : ComponentActivity() {
         private const val ACTION_FORWARD = "app.kickplayer.PIP_FORWARD"
         private val SPEEDS = listOf(1f, 1.25f, 1.5f, 1.75f, 2f)
         private const val MAX_ZOOM = 8f
+        private const val NAVBAR_HEIGHT_DP = 52
         private const val MAX_CAPTION_LINES = 2
         private const val CONTROLS_TIMEOUT_MS = 5_000
         private val playNotes = mutableMapOf<String, String>()
