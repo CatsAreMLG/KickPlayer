@@ -8,6 +8,21 @@ An Android app for watching Kick live streams and VODs with proper media control
 
 Download the `.apk` file under Assets and open it on your Android phone (Android 8.0 or newer). Allow installs from your browser or file app when asked, and tap "Install anyway" if Play Protect warns about an unrecognized app. New versions install over the old one and keep your settings, recents, and VOD positions.
 
+## Screenshots
+
+<p>
+  <img src="docs/screenshots/home.png" width="250" alt="Home view with in app PIP">
+  <img src="docs/screenshots/live.png" width="250" alt="Live stream view with more from streamer below">
+  <img src="docs/screenshots/vod-resume.png" width="250" alt="VOD resumed with more from streamer below">
+</p>
+<p>
+  <img src="docs/screenshots/media-controls" width="250" alt="Lock screen media controls">
+  <img src="docs/screenshots/pip.png" width="760" alt="Picture-in-picture with skip buttons">
+</p>
+
+<img src="docs/screenshots/fullscreen-settings.png" width="760" alt="Fullscreen with speed and quality menu">
+<img src="docs/screenshots/zooms.png" width="760" alt="8x zoom in fullscreen">
+
 ## About
 
 This is an unofficial, personal project. It is not affiliated with Kick, and it relies on Kick's undocumented web API, which can change without notice.
