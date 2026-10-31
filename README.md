@@ -20,7 +20,9 @@ This is an unofficial, personal project. It is not affiliated with Kick, and it 
 
 **VODs.** Paste a VOD link, or type a channel and tap VODs to browse recent ones with thumbnails. The app remembers where you stopped in each VOD and resumes there, including after closing the app.
 
-**Home screen.** Everything you've watched appears under the player with thumbnails. Channels show a LIVE or OFFLINE badge, checked each time you open the app. VODs show their length and a progress bar. Long-press an entry to remove it.
+**Home screen.** Search for a channel or paste a link at the top. Pin your favorite streamers to a row of avatars that light up green when they're live; tap one to watch live, or to browse VODs if they're offline. Everything you've watched appears below with thumbnails, LIVE or OFFLINE badges, VOD lengths, and progress bars. Long-press an entry to pin its streamer or remove it.
+
+**Mini player.** Press the home button on the video, swipe down on it, or use the back gesture, and the video shrinks into a floating mini player over the home screen while it keeps playing. Drag it anywhere, tap it to open the full player again, or close it with the X. Under the full player you'll find the streamer, a Pin button, and more VODs from that channel.
 
 **Player controls.**
 - Gear menu: playback speed (1x to 2x), video quality (Auto or a fixed resolution, remembered across streams), and Go to live.
