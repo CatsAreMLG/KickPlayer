@@ -16,7 +16,7 @@ Download the `.apk` file under Assets and open it on your Android phone (Android
   <img src="docs/screenshots/vod-list.png" width="250" alt="List of VODs from a streamer"> 
 </p>
 <p>
-  <img src="docs/screenshots/media-controls" width="250" alt="Lock screen media controls">
+  <img src="docs/screenshots/media-controls.png" width="250" alt="Lock screen media controls">
   <img src="docs/screenshots/pip.png" width="760" alt="Picture-in-picture with skip buttons">
 </p>
 <img src="docs/screenshots/fullscreen-settings.png" width="760" alt="Fullscreen with speed and quality menu">
