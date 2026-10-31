@@ -13,15 +13,14 @@ Download the `.apk` file under Assets and open it on your Android phone (Android
 <p>
   <img src="docs/screenshots/home.png" width="250" alt="Home view with in app PIP">
   <img src="docs/screenshots/live.png" width="250" alt="Live stream view with more from streamer below">
-  <img src="docs/screenshots/vod-resume.png" width="250" alt="VOD resumed with more from streamer below">
+  <img src="docs/screenshots/vod-list.png" width="250" alt="List of VODs from a streamer"> 
 </p>
 <p>
   <img src="docs/screenshots/media-controls" width="250" alt="Lock screen media controls">
   <img src="docs/screenshots/pip.png" width="760" alt="Picture-in-picture with skip buttons">
 </p>
-
 <img src="docs/screenshots/fullscreen-settings.png" width="760" alt="Fullscreen with speed and quality menu">
-<img src="docs/screenshots/zooms.png" width="760" alt="8x zoom in fullscreen">
+<img src="docs/screenshots/zoom.png" width="760" alt="8x zoom in fullscreen">
 
 ## About
 
